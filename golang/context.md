@@ -5,32 +5,30 @@
 context 主要用来在 goroutine 之间传递上下文信息，包括：取消信号、超时时间、截止时间、k-v 等，主要用于**超时控制**和**多Goroutine间的数据传递**
 
 
-context可以用来在goroutine之间传递上下文信息，相同的context可以传递给运行在不同goroutine中的函数，上下文对于多个goroutine同时使用是安全的
+## context使用场景
 
-优点
-1. 使用context可以更好的做并发控制，能更好的管理goroutine滥用
-2. context的携带者功能没有任何限制，这样我我们传递任何的数据
+**HTTP/RPC Server**
 
-缺点：
-1. context可以携带值，但是没有任何限制，类型和大小都没有限制，也就是没有任何约束，这样很容易导致滥用，程序的健壮很难保证
-2. context取消和自动取消的错误返回不够友好，无法自定义错误，出现难以排查的问题时不好排查
-## 接口定义
-```go
-  type Context interface {
-   Deadline() (deadline time.Time, ok bool) //截止时间，到了这个时间，Context 会自动发起取消请求
-   Done() <-chan struct{}//方法：返回一个只读的 channel ，类型为 struct{}。如果这个 chan 可以读取，说明已经发出了取消信号，可以做清理操作，然后退出协程，释放资源
-   Err() error//Context被取消原因
-   Value(key interface{}) interface{} 
-}
+![](img/context.png)
+Go 的 server 里，通常每来一个请求都会启动若干个 goroutine 同时工作：有些去数据库拿数据，有些调用下游接口获取相关数据
 
-```
+而客户端一般不会无限制的等待，都会被请求设定超时时间，比如100ms。
+
+比如这里GoroutineA消耗80ms，GoroutineB3消耗30ms，已经超时了，那么后续的GoroutineCDEF都没必要执行了，客户端已经超时返回了，服务端就算计算出结果也没有任何意义了。
+
+所以这里就可以使用 Context 来在多个 Goroutine 之间进行超时信号传递
+
+引入超时好处：
+
+1. 客户端可以快速返回，提升用户体验
+2. 服务端减少无效计算
 
 
 ## 注意事项
 - context 的 Done() 方法往往需要配合 select {} 使用，以监听退出。
 - 尽量通过函数参数来暴露 context，不要在自定义结构体里包含它。
 - 直接将 Context 类型作为函数的第一参数，而且一般都命名为 ctx
-- 不要把本应该作为函数参数的类型塞到 context 中，context 存储的应该是一些共同的数据。例如：登陆的 session、cookie 等
+- context 存储的应该是一些共同的数据。例如：登陆的 session、cookie 等
 - WithValue 类型的 context 应该尽量存储一些全局的 data，而不要存储一些可有可无的局部 data。
 
 - 一旦 context 执行取消动作，所有派生的 context 都会触发取消。
