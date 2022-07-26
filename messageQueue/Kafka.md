@@ -56,6 +56,12 @@ Kafka 利用了两项零拷贝技术，mmap 和 sendfile。前者是用于解决
 
 关键字：零拷贝，顺序写，缓冲区，批量，压缩，分段存储
 
+### KafKa高可用性
+
+1. 备份机制：Kafka允许同一个Partition存在多个消息副本，每个Partition的副本通常由1个Leader及0个以上的Follower组成，生产者将消息直接发往对应Partition的Leader，Follower会周期地向Leader发送同步请求。所有的Partition以及各Partition的副本均匀地分配到整个集群的各个Broker上
+2. ISR机制
+3. 故障恢复机制。
+
 
 #### 类似问题
 - 什么是零拷贝
