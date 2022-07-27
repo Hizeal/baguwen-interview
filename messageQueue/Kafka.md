@@ -75,9 +75,11 @@ Kafka 利用了两项零拷贝技术，mmap 和 sendfile。前者是用于解决
 
 ### Kafka 的 ISR 是如何工作的？
 
-答：ISR 是分区同步的概念。Kafka 为每个主分区维护了一个 ISR，处于 ISR 的分区意味着与主分区保持了同步（所以主分区也在 ISR 里面）。
+答：ISR 是分区同步的概念。Kafka 为每个分区的leader维护了一个 ISR，处于 ISR 的follower意味着与leader保持了同步（所以主分区也在 ISR 里面）。
 
 当 Producer 写入消息的时候，需要等 ISR 里面分区的确认，当 ISR 确认之后，就被认为消息已经提交成功了。ISR 里面的分区会定时从主分区里面拉取数据，如果长时间未拉取，或者数据落后太多，分区会被移出 ISR。ISR 里面分区已经同步的偏移量被称为 LEO（Log End Offset），最小的 LEO 称为 HW（高水位，high water，这个用木桶来比喻就很生动，ISR 里面的分区已同步消息就是木板，高水位就取决于最短的那个木板，也就是同步最落后的），也就是消费者可以消费的最新消息。
+
+所谓的一致性，就是Consumer始终读HW以上的消息。对于那些没有被足够多的Follower复制的消息，视为不安全。等消息都复制完毕，Consumer才使用消息。
 
 ![LEO 和 HW](https://img-blog.csdnimg.cn/20200706235345430.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L2FqaWFueWluZ3hpYW9xaW5naGFu,size_16,color_FFFFFF,t_70)
 
@@ -139,6 +141,27 @@ ISR 的同步机制和其它中间件机制也是类似的，在涉及主从同�
 >补充： 为什么kafka要将`replica.lag.max.messages`删除？
 > 
 > 因为这个参数本身很难给出一个合适的值。以默认的值4000为例，对于消息流入速度很低的主题（比如TPS为10），这个参数就没什么用；对于消息流入速度很高的主题（比如TPS为2000），这个参数的取值又会引入ISR的频繁变动(ISR 需要在Zookeeper中维护)。所以从0.9x版本开始，Kafka就彻底移除了这一个参数。
+
+
+### Kafka的一致性和可靠性如何保证
+
+1. 生产者数据不丢失
+
+Producer向 kafka 发送数据的时候，每次发送消息都会有一个确认反馈机制，确保消息正常的能够被收到。
+
+反馈分为3种
+
+2. Topic分区副本
+
+每个Partition有多个副本，一个副本是Leader，其余位Follower。所有的读写操作都是经过 Leader 进行的，同时 follower 会定期地去 leader 上复制数据。当 Leader 挂掉之后，其中一个 follower 会重新成为新的 Leader。通过分区副本，引入了数据冗余，同时也提供了 Kafka 的数据可靠性
+
+**把消息写入多个副本可以使 Kafka 在发生崩溃时仍能保证消息的持久性**
+
+3. leader选举
+
+leader挂掉后，会从 ISR 列表中选择第一个 follower 作为新的 Leader，因为这个分区拥有最新的已经 committed 的消息。通过这个可以保证已经 committed 的消息的数据可靠性
+
+
 
 ### Kafka 的负载均衡策略有哪些？
 
