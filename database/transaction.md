@@ -111,6 +111,8 @@ InnoDB 作为一个优等生，在[隔离级别定义](https://en.wikipedia.org/
 
 ![](img/rr-phantom-read-example.png)
 
+快照读：当某个数据正在被修改的时候，也可以进行读取该数据，保证读写不冲突
+
 #### 参考资料
 
 - 官方文档-[InnoDB 宣称使用临键锁解决幻读](https://dev.mysql.com/doc/refman/8.0/en/innodb-next-key-locking.html)

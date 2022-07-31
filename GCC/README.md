@@ -58,3 +58,18 @@ Linux系统中空闲的、已用的物理内存及swap内存,及被内核使用�
 
 列出所有 udp 端口 #netstat -au
 
+-p ：显示建立相关链接的程序名
+-n : 拒绝显示别名，能显示数字的全部转化成数字
+
+### 如何查看主机 CPU 核数？如何查看内存还剩多少
+
+cat /proc/cpuinfo
+
+cat /proc/meminfo
+
+### 哪个进程监听80端口
+
+
+lsof -i:80
+
+netstat -tunlp | grep 80
