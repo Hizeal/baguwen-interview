@@ -73,3 +73,7 @@ cat /proc/meminfo
 lsof -i:80
 
 netstat -tunlp | grep 80
+
+## 查看进程上下文切换
+
+pidstat
