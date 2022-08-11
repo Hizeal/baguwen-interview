@@ -50,6 +50,20 @@ Raft 把集群中节点分为三种状态：Leader、 Follower、Candidate
   - Leader 当前任期里的日志条目通过计算副本数目可以被提交；一旦当前任期的日志条目以这种方式被提交，那么由于日志匹配特性，之前的日志条目也都会被间接的提交
   - Leader 复制之前任期里的日志时，Raft 会为所有日志保留原始的任期号
 
+### 脑裂问题
+
+![脑裂问题](Raft脑裂.png)
+
+当raft在集群中遇见网络分区的时候,集群就会因此而相隔开,在不同的网络分区里会因为无法接收到原来的leader发出的心跳而超时选主,这样就会造成多leader现象
+
+当网络恢复的时候,集群不再是双分区,raft会有如下操作：
+
+①: leaderD发现自己的Term小于LeaderA,会自动下台(step down)成为follower,leaderA保持不变依旧是集群中的主leader角色
+
+②: 分区中的所有节点会回滚roll back自己的数据日志,并匹配新leader的log日志,然后实现同步提交更新自身的值。通知旧leaderA也会主动匹配主leader节点的最新值,并加入到follower中
+
+③: 最终集群达到整体一致，集群存在唯一leader（节点A）
+
 
 
 ## ETCD
