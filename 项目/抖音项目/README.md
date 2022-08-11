@@ -1,14 +1,35 @@
+# 架构设计
+
+Middleware：Token解析和颁发，密码加密
+
+Handler：解析得到参数，开始调用下层逻辑
+
+Service：
+- 上层需要返回数据信息
+  - 检查参数
+  - 准备数据
+  - 打包数据
+
+- 不需要返回数据信息
+  - 检查参数，执行上层指定动作
+
+- Model层
+  - 面向于数据库的增删改查，不需要考虑和上层的交互
 
 # 用户登录
 
 main函数->路由->调用对应中间件加密密码->调用对应Handler
 
+## middleware
+
+进入中间件SHAMiddleWare内的函数逻辑，得到password明文加密后再设置password。具体需要调用gin.Context的Set方法设置password。随后调用next()方法继续下层路由
+
 ## Handler层：UserLoginHandler(c *gin.Context)
 
 - 传入context，解析其中的name和password，解析失败，响应体写入错误
 - 调用Service层QueryUserLogin，将上文解析的name和password送入
-- Service返回包含user_id和Token的响应
-- Handler在响应体写入状态码、状态信息、id和Token
+- Service调用middleware中颁布Token函数，返回包含user_id和Token的响应
+- Handler在响应体写入状态码、状态信息、id和Token（HS256）
   - 状态码1表示错误
   - 状态码0表示正常返回
 
@@ -34,6 +55,10 @@ main函数->路由->调用对应中间件加密密码->调用对应Handler
 
 main函数->路由->调用对应中间件加密密码->调用对应Handler
 
+## middleware
+
+进入中间件SHAMiddleWare内的函数逻辑，得到password明文加密后再设置password。具体需要调用gin.Context的Set方法设置password。随后调用next()方法继续下层路由
+
 ## Handles：UserRegisterHandler(c *gin.Context)
 
 - 传入context，解析username和password，解析失败，响应体写入错误
@@ -42,8 +67,11 @@ main函数->路由->调用对应中间件加密密码->调用对应Handler
 - Handler在响应体写入状态码、状态信息、id和Token
 
 ## Service层：PostUserLogin(username, password string) (*LoginResponse, error)
-- 检测传入username和password是否合法，构建用户信息表
-- 调用models层AddUserInfo，添加该用户信息表
+- 检测传入username和password是否合法
+  - 用户名是否为空，用户名长度限制，密码是否空
+- 构建用户信息表
+  - 如果用户名已存在，返回错误
+- 调用models层AddUserInfo，数据库中添加该用户信息表
   - 用户登录表
   - 用户信息表UserInfo
 - 添加成功，颁发Token，打包数据，返回给上层Handler
@@ -57,6 +85,12 @@ main函数->路由->调用对应中间件加密密码->调用对应Handler
 # 用户发布视频 
 
 main函数->router->调用对应中间件解析Token->调用对应Handler
+
+此时处于登录状态，只需要传入用户id和Token，验证Token。根据用户Id生成Token
+
+## middleware
+
+解析token，是否超时或token不正确
 
 ## Handlers：PublishVideoHandler(c *gin.Context)
 - 解析user_id和视频title，
@@ -96,7 +130,9 @@ main函数->router->调用对应中间件取出user_id->调用对应Handler
 
 # 用户点赞操作
 
-main函数->router->调用对应中间件解析Token->调用对应Handler
+## middleware
+
+解析token，是否超时或token不正确
 
 ## Handler：PostFavorHandler(c *gin.Context) 
 - 取出context的user_id、video_id、动作类型（点赞1或取消点赞2）
@@ -153,3 +189,115 @@ main函数->router->调用对应中间件解析Token->调用对应Handler
 1. 执行事务，删除表中对应commentId的信息
 2. 减少comment_count
 3. 提交事务，返回nil
+
+
+## 用户关注/取消关注
+
+## middleware
+
+解析token，是否超时或token不正确
+
+## Handler：PostFollowActionHandler(c *gin.Context)
+- 用户id，他要关注的id，关注/取消关注的动作
+- 调用startAction()，startAction()调用Service层的PostFollowAction(p.userId, p.followId, p.actionType)
+- Service返回错误
+  - 判断是否是未定义操作或是数据库中找不到用户，自己关注自己
+  - 否则就是model层错误，说明是重复键值插入
+
+## Service：PostFollowAction(p.userId, p.followId, p.actionType)
+- 调用Model层IsUserExistById，检查要关注的用户id是否在数据库当中
+- 判断actionType是否为关注或取消关注
+- 关注
+  - 调用Models层的AddUserFollow(userId, userToId int64)
+  - 更新Redis中信息
+- 取消关注
+  - 调用Models层的CancelUserFollow(p.userId, p.userToId)
+  - 更新Redis中信息
+
+## Model层：
+
+### AddUserFollow(p.userId, p.userToId)
+
+更新用户信息表中对应的关注人数和关注者人数
+在用户关系表中插入(用户id，关注id)
+
+更新Redis中
+### CancelUserFollow(p.userId, p.userToId)
+
+更新用户信息表中对应的关注人数和关注者人数
+在用户关系表中删除(用户id，关注id)
+
+
+# 用户信息表
+```go
+type UserInfo struct {
+	Id            int64       `json:"id" gorm:"id,omitempty"`
+	Name          string      `json:"name" gorm:"name,omitempty"`
+	FollowCount   int64       `json:"follow_count" gorm:"follow_count,omitempty"`
+	FollowerCount int64       `json:"follower_count" gorm:"follower_count,omitempty"`
+	IsFollow      bool        `json:"is_follow" gorm:"is_follow,omitempty"`
+	User          *UserLogin  `json:"-"`                                     //用户与账号密码之间的一对一
+	Videos        []*Video    `json:"-"`                                     //用户与投稿视频的一对多
+	Follows       []*UserInfo `json:"-" gorm:"many2many:user_relations;"`    //用户之间的多对多
+	FavorVideos   []*Video    `json:"-" gorm:"many2many:user_favor_videos;"` //用户与点赞视频之间的多对多
+	Comments      []*Comment  `json:"-"`                                     //用户与评论的一对多
+}
+```
+
+# 用户登录表,与用户信息表一对一
+```go
+type UserLogin struct {
+	Id         int64 `gorm:"primary_key"`
+	UserInfoId int64
+	Username   string `gorm:"primary_key"`
+	Password   string `gorm:"size:200;notnull"`
+}
+```
+# 视频表
+
+```go
+type Video struct {
+	Id            int64       `json:"id,omitempty"`
+	UserInfoId    int64       `json:"-"`
+	Author        UserInfo    `json:"author,omitempty" gorm:"-"` //这里应该是作者对视频的一对多的关系，而不是视频对作者，故gorm不能存他，但json需要返回它
+	PlayUrl       string      `json:"play_url,omitempty"`
+	CoverUrl      string      `json:"cover_url,omitempty"`
+	FavoriteCount int64       `json:"favorite_count,omitempty"`
+	CommentCount  int64       `json:"comment_count,omitempty"`
+	IsFavorite    bool        `json:"is_favorite,omitempty"`
+	Title         string      `json:"title,omitempty"`
+	Users         []*UserInfo `json:"-" gorm:"many2many:user_favor_videos;"`
+	Comments      []*Comment  `json:"-"`
+	CreatedAt     time.Time   `json:"-"`
+	UpdatedAt     time.Time   `json:"-"`
+}
+```
+
+# 评论表
+```go
+type Comment struct {
+	Id         int64     `json:"id"`
+	UserInfoId int64     `json:"-"` //用于一对多关系的id
+	VideoId    int64     `json:"-"` //一对多，视频对评论
+	User       UserInfo  `json:"user" gorm:"-"`
+	Content    string    `json:"content"`
+	CreatedAt  time.Time `json:"-"`
+	CreateDate string    `json:"create_date" gorm:"-"`
+}
+```
+
+# 中间表
+
+user_infos和videos的多对多关系，创建一张user_favor_videos中间表，然后将该表的字段均设为外键，分别存下user_infos和videos对应行的id。如id为1的用户对id为2的视频点了个赞，那么就把这个1和2存入中间表user_favor_videos即可
+
+user_relations中间表，存下用户id和该用户关注者id
+
+# Redis
+
+key：点赞：用户id
+value：用户点赞的视频id集合
+
+
+key：关注：用户id
+value：用户关注的id集合
+

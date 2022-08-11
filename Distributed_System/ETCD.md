@@ -30,8 +30,8 @@ Raft 把集群中节点分为三种状态：Leader、 Follower、Candidate
 
 - Leader收到客户端请求，将其作为日志条目Entry记录入本地日志，该条目是未提交状态
 - 随着心跳，Leader将Entry并发发送给其他Follower，让它们复制这条日志条目
-  - 发送追加日志条目的时候，Leader 会把新的日志条目紧接着之前条目的索引位置， Leader 任期号也包含在其中；如果没有，Follower拒绝接收，此时说明二者不一致
-  - Leader与Follower不一致？
+  - 发送追加日志条目的时候，Leader 会把新的日志条目紧接着之前条目的索引位置， Leader 任期号也包含在其中；如果Follower 在它的日志中找不到包含相同索引位置和任期号的条目，那么它就会拒绝接收新的日志条目
+  - 如何解决Leader与Follower不一致？
     - leader 必须找到最后两者达成一致的地方，然后删除从那个点之后的所有日志条目，发送自己的日志给 Follower。所有的这些操作都在进行附加日志的一致性检查时完成
 
 - Followers 接收到 Leader 发来的复制请求后，回应Leader。此时Entry仍是未提交
